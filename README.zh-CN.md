@@ -1,7 +1,6 @@
 # pandasgeo
-
-<div align="center">
 [English](README.md) | [简体中文](README.zh-CN.md)
+
 `pandasgeo` 是一个用于地理空间数据处理和分析的Python包，它基于 `geopandas` 和 `pandas` 构建，提供了一系列简化常见GIS操作的工具函数。
 
 ## 功能
