@@ -14,80 +14,279 @@ import kml2geojson as k2g
 from itertools import chain
 from scipy.spatial import cKDTree
 import pyproj
-
-def create_projected_kdtree(df, lon_col='lon', lat_col='lat'):
-    """将经纬度转换为UTM投影并创建KDTree"""
-    lons = df[lon_col].values
-    lats = df[lat_col].values
-    
-    # 确定中心点（用于选择UTM区域）
-    center_lon, center_lat = np.mean(lons), np.mean(lats)
-    utm_zone = int((center_lon + 180) / 6) + 1
-    hemisphere = 'north' if center_lat >= 0 else 'south'
-    # EPSG code for WGS 84 / UTM zone
-    epsg_code = 32600 + utm_zone if hemisphere == 'north' else 32700 + utm_zone
-    
-    # 创建转换器
-    transformer = pyproj.Transformer.from_crs("EPSG:4326", f"EPSG:{epsg_code}", always_xy=True)
-    
-    # 转换为UTM坐标
-    x, y = transformer.transform(lons, lats)
-    points = np.column_stack((x, y))
-    
-    return points, f"EPSG:{epsg_code}"
+from .utils import *
+from typing import Optional
 
 
-def min_distance_twotable(df1, df2, 
-                    lon1='lon1', lat1='lat1', lon2='lon2', lat2='lat2',
-                    df2_id='id', n=1):
+def min_distance_onetable(df, lon='lon', lat='lat', idname='id', n=1, include_self=False) -> pd.DataFrame:
     """
-    计算df1中每个点到df2中最近的n个点，并将结果添加到df1的副本中
+    计算DataFrame中每个点的最近n个点(可选择是否包含自身)
     
     参数:
-    df1 (DataFrame): 源数据，包含经纬度列
-    df2 (DataFrame): 目标数据，包含经纬度列
-    lon1 (str): df1的经度列名
-    lat1 (str): df1的纬度列名
-    lon2 (str): df2的经度列名
-    lat2 (str): df2的纬度列名
-    df2_id (str): df2中用于标识的ID列名
+    df (DataFrame): 输入数据
+    lon (str): 经度列名
+    lat (str): 纬度列名
+    id (str): ID列名，默认为'id'
     n (int): 要查找的最近邻数量
+    include_self (bool): 是否包含自身点，默认为False
     
     返回:
-    DataFrame: 添加了最近邻信息的df1的副本
+    DataFrame: 添加了最近邻信息的副本
+    示例：
+    import pandas as pd
+    import pandasgeo as pdg
+
+    # 创建两个示例DataFrame
+    df2 = pd.DataFrame({
+        'id': ['A', 'B', 'C', 'D'],
+        'lon2': [116.403, 116.407, 116.404, 116.408],
+        'lat2': [39.914, 39.918, 39.916, 39.919]
+    })
+
+    # 计算最近的1个点
+    result = pdg.min_distance_onetable(df2,'lon2','lat2',idname='id',n=1)
+    print("结果示例（距离单位：米）:")
+    print(result)
+    print(result2)
+    结果展示：
+    **最近1个点**
+    id	lon2	lat2	nearest1_id	nearest1_lon2	nearest1_lat2	nearest1_distance
+    0	p1	114.01	30.01	p2	114.05	30.05	5881.336911
+    1	p2	114.05	30.05	p1	114.01	30.01	5881.336911
+    2	p3	114.12	30.12	p2	114.05	30.05	10289.545038
+
+    """
+    # 参数验证
+    if n < 1:
+        raise ValueError("n must be > 0")
+    if lon not in df.columns or lat not in df.columns:
+        raise ValueError("Longitude or latitude column not found")
+    if idname not in df.columns:
+        raise ValueError("ID column not found")
+    if df.empty:
+        return df  # 返回空 DataFrame 而不是抛出异常
+    detected_crs = detect_crs(df, lon, lat)
+    # 创建结果副本
+    result = df.copy()
+    
+    # 处理空数据或数据量不足的情况
+    if len(df) == 0 or (len(df) == 1 and not include_self):
+        for i in range(1, n+1):
+            result[f'nearest{i}_{idname}'] = np.nan
+            result[f'nearest{i}_{lon}'] = np.nan
+            result[f'nearest{i}_{lat}'] = np.nan
+            result[f'nearest{i}_distance'] = np.nan
+        if n > 1:
+            result['mean_distance'] = np.nan
+        return result
+    
+    # 提取坐标点
+    points, proj_crs = create_projected_kdtree(result, lon, lat)
+
+    # 创建KDTree
+    tree = cKDTree(points)
+    
+    # 计算要查询的邻居数量
+    # 如果不包含自身，需要额外查询1个点(因为第一个是自身)
+    k_query = n + (0 if include_self else 1)
+    # 确保不超过数据集大小
+    k_query = min(k_query, len(df))
+    
+    # 查询最近的k个点
+    distances, indices = tree.query(points, k=k_query, workers=-1)
+    
+    # 处理单个邻居的情况(确保是二维数组)
+    if k_query == 1:
+        distances = distances.reshape(-1, 1)
+        indices = indices.reshape(-1, 1)
+    
+    # 如果不包含自身，跳过第一列(自身点)
+    if not include_self and k_query > 1:
+        distances = distances[:, 1:]
+        indices = indices[:, 1:]
+    
+    # 确保结果有正确的列数
+    current_k = distances.shape[1] if len(distances.shape) > 1 else 1
+    
+    # 初始化结果数组
+    result_indices = np.full((len(df), n), -1, dtype=int)
+    result_distances = np.full((len(df), n), np.nan)
+    
+    # 填充有效数据
+    valid_cols = min(current_k, n)
+    if valid_cols > 0:
+        if len(distances.shape) == 1:
+            result_indices[:, 0] = indices
+            result_distances[:, 0] = distances
+        else:
+            result_indices[:, :valid_cols] = indices[:, :valid_cols]
+            result_distances[:, :valid_cols] = distances[:, :valid_cols]
+    
+    # 添加最近邻信息到结果DataFrame
+    for i in range(n):
+        # 获取当前列的索引
+        col_indices = result_indices[:, i]
+        
+        # 初始化列
+        id_values = []
+        lon_values = []
+        lat_values = []
+        
+        # 填充数据
+        for idx in col_indices:
+            if idx >= 0:
+                id_values.append(df.iloc[idx][idname])
+                lon_values.append(df.iloc[idx][lon])
+                lat_values.append(df.iloc[idx][lat])
+            else:
+                id_values.append(np.nan)
+                lon_values.append(np.nan)
+                lat_values.append(np.nan)
+
+        result[f'nearest{i+1}_{idname}'] = id_values
+        result[f'nearest{i+1}_{lon}'] = lon_values
+        result[f'nearest{i+1}_{lat}'] = lat_values
+        result[f'nearest{i+1}_distance'] = result_distances[:, i]
+
+    # 添加平均距离(当n>1时)
+    if n > 1:
+        dist_cols = [f'nearest{j+1}_distance' for j in range(n)]
+        result['mean_distance'] = result[dist_cols].mean(axis=1)
+
+    return result
+
+
+def min_distance_twotable(df1, df2, lon1='lon1', lat1='lat1', lon2='lon2', lat2='lat2', df2_id='id', n=1,
+                          crs1: Optional[str]=None, crs2: Optional[str]=None) -> pd.DataFrame:
+    """
+    计算df1中每个点到df2中最近的n个点的距离
+    
+    该函数使用KDTree算法高效计算两个DataFrame之间的最近邻距离。
+    坐标系统必须一致（当前仅支持WGS84/EPSG:4326）。
+    距离通过UTM投影计算，单位为米。
+    
+    Parameters
+    ----------
+    df1 : pd.DataFrame
+        源数据表，包含待查询的坐标点
+    df2 : pd.DataFrame
+        目标数据表，包含参考坐标点
+    lon1 : str, default='lon1'
+        df1的经度列名
+    lat1 : str, default='lat1'
+        df1的纬度列名
+    lon2 : str, default='lon2'
+        df2的经度列名
+    lat2 : str, default='lat2'
+        df2的纬度列名
+    df2_id : str, default='id'
+        df2中用于标识点的ID列名
+    n : int, default=1
+        要查找的最近邻数量
+    crs1 : str, optional
+        df1的坐标系统，如 'EPSG:4326'。如果为None则自动检测
+    crs2 : str, optional
+        df2的坐标系统，如 'EPSG:4326'。如果为None则自动检测
+    
+    Returns
+    -------
+    pd.DataFrame
+        返回df1的副本，添加以下列：
+        - nearest{i}_{df2_id} : 第i近的点的ID
+        - nearest{i}_{lon2} : 第i近的点的经度
+        - nearest{i}_{lat2} : 第i近的点的纬度
+        - nearest{i}_distance : 距离（米）
+        - mean_distance : 前n个最近点的平均距离（当n>1时）
+    
+    Raises
+    ------
+    ValueError
+        - 如果n < 1
+        - 如果两个DataFrame的坐标系不一致
+        - 如果坐标范围不符合WGS84标准
+    
+    Examples
+    --------
+    import pandas as pd
+    df1 = pd.DataFrame({
+        'id': [1, 2, 3],
+        'lon1': [116.404, 116.405, 116.406],
+        'lat1': [39.915, 39.916, 39.917]
+    })
+    df2 = pd.DataFrame({
+        'id': ['A', 'B', 'C'],
+        'lon2': [116.403, 116.407, 116.404],
+        'lat2': [39.914, 39.918, 39.916]
+    })
+    # 计算df1中每个点到df2中最近的那个点
+    result = pdg.min_distance_twotable(df1, df2,lon1='lon1', lat1='lat1', lon2='lon2', lat2='lat2', df2_id='id', n=1)
+    print(result)
+    
+    Notes
+    -----
+    - 距离计算使用UTM投影，确保精度
+    - 使用cKDTree进行高效的最近邻搜索
+    - 当n大于df2的点数时，缺失的邻居会用NaN填充
+    - 坐标系统必须为WGS84 (EPSG:4326)
     """
     # 验证输入
     if n < 1:
-        raise ValueError("n必须大于0")
+        raise ValueError("参数 n 必须大于等于 1")
+    # 处理空数据情况
+    if len(df2) == 0 or len(df1) == 0:
+        for i in range(1, n + 1):
+            df1[f'nearest{i}_{df2_id}'] = np.nan
+            df1[f'nearest{i}_{lon2}'] = np.nan
+            df1[f'nearest{i}_{lat2}'] = np.nan
+            df1[f'nearest{i}_distance'] = np.nan
+        if n > 1:
+            df1['mean_distance'] = np.nan
+        return df1
+    # 检测或验证坐标系
+    detected_crs1 = detect_crs(df1, lon1, lat1)
+    detected_crs2 = detect_crs(df2, lon2, lat2)
+    
+    # 如果用户指定了CRS，验证是否匹配
+    if crs1 is not None and crs1 != detected_crs1:
+        raise ValueError(
+            f"指定的 crs1={crs1} 与检测到的坐标系 {detected_crs1} 不匹配"
+        )
+    if crs2 is not None and crs2 != detected_crs2:
+        raise ValueError(
+            f"指定的 crs2={crs2} 与检测到的坐标系 {detected_crs2} 不匹配"
+        )
+    
+    # 检查两个DataFrame的坐标系是否一致
+    if detected_crs1 != detected_crs2:
+        raise ValueError(
+            f"两个DataFrame的坐标系不一致！\n"
+            f"df1 坐标系: {detected_crs1}\n"
+            f"df2 坐标系: {detected_crs2}\n"
+            f"请确保两个数据集使用相同的坐标系统。"
+        )
     
     # 创建结果副本
     result = df1.copy()
     
-    # 如果df2为空，直接返回填充NaN的结果
-    if len(df2) == 0 or len(df1) == 0:
-        for i in range(1, n+1):
-            result[f'最近{i}id'] = np.nan
-            result[f'最近{i}经度'] = np.nan
-            result[f'最近{i}纬度'] = np.nan
-            result[f'最近{i}距离'] = np.nan
-        if n > 1:
-            result['平均距离'] = np.nan
-        return result
     
-    # 提取坐标点并投影
+    # 将df1坐标投影到UTM（单位：米）
     A_points, proj_crs = create_projected_kdtree(df1, lon1, lat1)
     
-    # 为df2创建转换器
-    transformer_b = pyproj.Transformer.from_crs("EPSG:4326", proj_crs, always_xy=True)
+    # 为df2创建转换器（使用相同的UTM投影）
+    transformer_b = pyproj.Transformer.from_crs(
+        "EPSG:4326", 
+        proj_crs, 
+        always_xy=True
+    )
     lons_b = df2[lon2].values
     lats_b = df2[lat2].values
     x_b, y_b = transformer_b.transform(lons_b, lats_b)
     B_points = np.column_stack((x_b, y_b))
-
+    
     # 创建KDTree进行高效搜索
     tree = cKDTree(B_points)
     
-    # 查询最近的n个点（实际数量为min(n, len(df2))）
+    # 查询最近的n个点
     k = min(n, len(df2))
     distances, indices = tree.query(A_points, k=k, workers=-1)
     
@@ -98,114 +297,29 @@ def min_distance_twotable(df1, df2,
     
     # 添加最近邻信息
     for i in range(k):
-        # 获取df2中的对应点
         nearest_points = df2.iloc[indices[:, i]]
-        
-        # 添加列
-        result[f'最近{i+1}id'] = nearest_points[df2_id].values
-        result[f'最近{i+1}经度'] = nearest_points[lon2].values
-        result[f'最近{i+1}纬度'] = nearest_points[lat2].values
-        result[f'最近{i+1}距离'] = distances[:, i]
+        result[f'nearest{i+1}_{df2_id}'] = nearest_points[df2_id].values
+        result[f'nearest{i+1}_{lon2}'] = nearest_points[lon2].values
+        result[f'nearest{i+1}_{lat2}'] = nearest_points[lat2].values
+        result[f'nearest{i+1}_distance'] = distances[:, i]  # 单位：米
     
-    # 添加缺失的列（当n>k时）
+    # 添加缺失的列（当n > k时）
     for i in range(k, n):
-        result[f'最近{i+1}id'] = np.nan
-        result[f'最近{i+1}经度'] = np.nan
-        result[f'最近{i+1}纬度'] = np.nan
-        result[f'最近{i+1}距离'] = np.nan
+        result[f'nearest{i+1}_{df2_id}'] = np.nan
+        result[f'nearest{i+1}_{lon2}'] = np.nan
+        result[f'nearest{i+1}_{lat2}'] = np.nan
+        result[f'nearest{i+1}_distance'] = np.nan
     
-    # 添加平均距离（当n>1时）
+    # 添加平均距离（当n > 1时）
     if n > 1:
-        # 提取所有距离列
-        dist_cols = [f'最近{i+1}距离' for i in range(min(n, k))]
+        dist_cols = [f'nearest{i+1}_distance' for i in range(min(n, k))]
         if dist_cols:
-            # 计算有效距离的平均值（忽略NaN）
-            avg_distances = result[dist_cols].mean(axis=1)
-            result['平均距离'] = avg_distances
+            result['mean_distance'] = result[dist_cols].mean(axis=1)
         else:
-            result['平均距离'] = np.nan
+            result['mean_distance'] = np.nan
     
     return result
 
-def min_site_one_table(data,id_name_column='id',
-    lon='lon',lat='lat',
-    num_min_results=3,Including_itself=False,juli_n=None):
-    '''
-    作用：表内找最近站点，一个或者多个
-    参数说明：
-    data: DataFrame - 包含位置数据的表格
-    id_name_column: str - 每个数据点的ID或名称字段
-    lon, lat: str - 经纬度字段名
-    num_min_results: int - 查询最近的站点数量（>=1）
-    Including_itself: bool - 是否包括自身
-        True: 包括自己（距离为0）
-        False: 不包括自己（默认）
-    juli_n: float - 距离限制（米），超出此距离不计算
-    
-    返回：
-    DataFrame - 包含最近站点信息和距离的表格
-    '''
-    
-    # 参数验证
-    if isinstance(num_min_results, (str, float)):
-        raise ValueError('num_min_results必须是整数类型')
-    if num_min_results < 1:
-        raise ValueError('num_min_results必须大于0')
-    
-    # 复制数据并创建GeoDataFrame
-    data_use = data.copy()
-    
-    if len(data_use) == 0:
-        for i in range(1, num_min_results + 1):
-            data_use[f'最近站点{i}'] = np.nan
-            data_use[f'最近距离{i}'] = np.nan
-            data_use[f'最近站点经度{i}'] = np.nan
-            data_use[f'最近站点纬度{i}'] = np.nan
-        if num_min_results > 1:
-            data_use['平均距离'] = np.nan
-        return data_use
-
-    points, _ = create_projected_kdtree(data_use, lon, lat)
-    tree = cKDTree(points)
-
-    k = num_min_results + 1 if not Including_itself else num_min_results
-    k = min(k, len(data_use))
-
-    distances, indices = tree.query(points, k=k, workers=-1)
-
-    if k == 1 and len(data_use) > 1:
-        distances = distances.reshape(-1, 1)
-        indices = indices.reshape(-1, 1)
-
-    start_index = 1 if not Including_itself and len(data_use) > 1 else 0
-
-    for i in range(num_min_results):
-        col_idx = start_index + i
-        if col_idx < k:
-            # Get the indices for the i-th nearest neighbor
-            neighbor_indices = indices[:, col_idx]
-            
-            # Get the data for the neighbors
-            neighbor_data = data_use.iloc[neighbor_indices]
-            
-            data_use[f'最近站点{i+1}'] = neighbor_data[id_name_column].values
-            data_use[f'最近距离{i+1}'] = distances[:, col_idx]
-            data_use[f'最近站点经度{i+1}'] = neighbor_data[lon].values
-            data_use[f'最近站点纬度{i+1}'] = neighbor_data[lat].values
-
-            if juli_n is not None:
-                data_use.loc[data_use[f'最近距离{i+1}'] > juli_n, [f'最近站点{i+1}', f'最近距离{i+1}', f'最近站点经度{i+1}', f'最近站点纬度{i+1}']] = np.nan
-        else:
-            data_use[f'最近站点{i+1}'] = np.nan
-            data_use[f'最近距离{i+1}'] = np.nan
-            data_use[f'最近站点经度{i+1}'] = np.nan
-            data_use[f'最近站点纬度{i+1}'] = np.nan
-
-    if num_min_results > 1:
-        dist_cols = [f'最近距离{i+1}' for i in range(num_min_results)]
-        data_use['平均距离'] = data_use[dist_cols].mean(axis=1)
-        
-    return data_use
 
 def add_buffer(data,lon='lon',lat='lat',distance=50):
     '''
@@ -217,10 +331,22 @@ def add_buffer(data,lon='lon',lat='lat',distance=50):
     return GeoDataFrame
     '''
     gdf = add_points(data,lon,lat)
-    gdf_buffer = gdf.to_crs(epsg=3857).buffer(distance).to_crs(epsg=4326)
+    gdf_crs = gdf.crs
+    utm_crs = gdf.estimate_utm_crs()
+    gdf_buffer = gdf.to_crs(utm_crs).buffer(distance).to_crs(gdf_crs)
     gdf['geometry'] = gdf_buffer
     return gdf
-
+def add_buffer_df(df,lon='lon',lat='lat',buff_col='distance',geometry='geometry'):
+    '''
+    作用：将一个经纬度数据进行扩大buffer，接受数据列为距离
+    '''        
+    df = df.copy()
+    df[geometry]=df[[lon,lat]].apply(lambda x:Point((x[0],x[1])),axis=1)
+    df=gpd.GeoDataFrame(df,crs="epsg:4326",geometry=geometry)
+    df=df.to_crs(epsg=32650)
+    df[geometry]=df[[geometry,buff_col]].apply(lambda x:x[0].buffer(x[1]),axis=1)
+    df=df.to_crs(epsg=4326)
+    return df
 def add_buffer_groupbyid(data,lon='lon',lat='lat',distance=50,
                         columns_name='聚合id',id_lable_x='聚合_'):
     '''
@@ -235,15 +361,19 @@ def add_buffer_groupbyid(data,lon='lon',lat='lat',distance=50,
     '''
     data_buffer = add_buffer(data,lon,lat,distance)
     # Use GeoDataFrame.dissolve
-    data_dissolve = data_buffer.dissolve()
+    data_dissolve = data_buffer[['geometry']].dissolve()
     # Explode multi-polygons to single polygons
     data_explode = data_dissolve.explode(index_parts=True).reset_index()
+    print(data_explode.columns)
     data_explode[columns_name] = id_lable_x + data_explode['level_0'].astype(str)
+    print(data_explode.columns)
     
-    data_sjoin = gpd.sjoin(add_points(data,lon,lat),data_explode,how='left', op='within')
+    data_sjoin = gpd.sjoin(add_points(data,lon,lat),data_explode,how='left')
     
     # Ensure original columns are preserved
+    print('data_sjoin::',data_sjoin.columns)
     data_columns = list(data.columns)
+    print(columns_name,data_columns)
     if columns_name not in data_columns:
         data_columns.append(columns_name)
     
@@ -278,124 +408,6 @@ def add_delaunay(
         gdf = gdf.merge(df[[id_use,'lonlat']].rename(columns={id_use:f'{id_use}_{i}','lonlat':f'site{i}'}),how='left',on=f'site{i}')
     return gdf
 
-def min_site_two_table(
-                    data1,
-                    data2,
-                    lon1='lon',
-                    lat1='lat',
-                    lon2='lon',
-                    lat2='lat',
-                    id1='id1',
-                    id2='id2',
-                    num_min_results=3):
-    '''
-    作用：表与表之间找最近站点，一个或者多个
-    参数说明：
-    data1, data2: DataFrame - 包含位置数据的表格
-    lon1, lat1: str - data1的经纬度字段名
-    lon2, lat2: str - data2的经纬度字段名
-    id1, id2: str - data1, data2的ID字段名
-    num_min_results: int - 查询最近的站点数量（>=1）
-    
-    返回：
-    DataFrame - 包含最近站点信息和距离的表格
-    '''
-    # 复制数据以避免修改原始数据
-    data1_copy = data1.copy()
-    data2_copy = data2.copy()
-
-    if len(data1_copy) == 0 or len(data2_copy) == 0:
-        for i in range(1, num_min_results + 1):
-            data1_copy[f'最近站点{i}'] = np.nan
-            data1_copy[f'最近距离{i}'] = np.nan
-            data1_copy[f'最近站点经度{i}'] = np.nan
-            data1_copy[f'最近站点纬度{i}'] = np.nan
-        if num_min_results > 1:
-            data1_copy['平均距离'] = np.nan
-        return data1_copy
-
-    # 创建GeoDataFrames
-    gdf1 = add_points(data1_copy, lon1, lat1)
-    gdf2 = add_points(data2_copy, lon2, lat2)
-
-    # 使用 sindex.nearest
-    k = min(num_min_results, len(gdf2))
-    
-    # sindex.nearest returns indices for gdf2
-    indices_tuple = gdf1.sindex.nearest(gdf2, return_all=True, max_distance=None)
-    
-    # The result is a tuple of arrays (input_indices, tree_indices)
-    # We need to group tree_indices by input_indices
-    
-    # Create a DataFrame to easily group results
-    nearest_df = pd.DataFrame({
-        'gdf1_idx': indices_tuple[0],
-        'gdf2_idx': indices_tuple[1]
-    })
-
-    # Calculate distances for all pairs
-    pt1 = gdf1.iloc[nearest_df['gdf1_idx']]
-    pt2 = gdf2.iloc[nearest_df['gdf2_idx']]
-    
-    # Use precise distance calculation
-    distances = distancea_df(pd.DataFrame({
-        'lon1': pt1[lon1].values, 'lat1': pt1[lat1].values,
-        'lon2': pt2[lon2].values, 'lat2': pt2[lat2].values
-    }))
-    nearest_df['distance'] = distances
-
-    # Sort by distance and take top k for each gdf1 point
-    nearest_df = nearest_df.sort_values(['gdf1_idx', 'distance'])
-    top_k = nearest_df.groupby('gdf1_idx').head(k)
-
-    # Pivot the table to get neighbors in columns
-    pivoted = top_k.groupby('gdf1_idx').cumcount().add(1)
-    top_k['neighbor_rank'] = pivoted
-    
-    result_df = top_k.pivot_table(
-        index='gdf1_idx', 
-        columns='neighbor_rank', 
-        values=['gdf2_idx', 'distance']
-    )
-    
-    # Flatten multi-level columns
-    result_df.columns = [f'{val}{col}' for val, col in result_df.columns]
-    
-    # Merge back with original data1
-    final_result = data1_copy.merge(result_df, left_index=True, right_index=True, how='left')
-
-    # Rename columns and add lon/lat info
-    for i in range(1, k + 1):
-        gdf2_idx_col = f'gdf2_idx{i}'
-        if gdf2_idx_col in final_result.columns:
-            # Get integer indices, handling NaNs
-            idx = final_result[gdf2_idx_col].dropna().astype(int)
-            
-            # Create new columns with default NaN
-            final_result[f'最近站点{i}'] = np.nan
-            final_result[f'最近站点经度{i}'] = np.nan
-            final_result[f'最近站点纬度{i}'] = np.nan
-
-            # Fill values using .loc
-            final_result.loc[idx.index, f'最近站点{i}'] = gdf2.iloc[idx][id2].values
-            final_result.loc[idx.index, f'最近站点经度{i}'] = gdf2.iloc[idx][lon2].values
-            final_result.loc[idx.index, f'最近站点纬度{i}'] = gdf2.iloc[idx][lat2].values
-            
-            final_result.rename(columns={f'distance{i}': f'最近距离{i}'}, inplace=True)
-            final_result.drop(columns=[gdf2_idx_col], inplace=True)
-
-    # Fill missing columns if k < num_min_results
-    for i in range(k + 1, num_min_results + 1):
-        final_result[f'最近站点{i}'] = np.nan
-        final_result[f'最近距离{i}'] = np.nan
-        final_result[f'最近站点经度{i}'] = np.nan
-        final_result[f'最近站点纬度{i}'] = np.nan
-
-    if num_min_results > 1:
-        dist_cols = [f'最近距离{i}' for i in range(1, num_min_results + 1) if f'最近距离{i}' in final_result.columns]
-        final_result['平均距离'] = final_result[dist_cols].mean(axis=1)
-
-    return final_result
 
 def add_voronoi(data,lon='lon',lat='lat'):
     '''
