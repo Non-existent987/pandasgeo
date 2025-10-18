@@ -1,7 +1,5 @@
 # pandasgeo
 
-[English](README.md) | [简体中文](README.zh-CN.md)
-
 `pandasgeo` is a Python package for geospatial data processing and analysis, built on `geopandas`, `pandas`, `shapely`, and `pyproj`. It provides a series of utility functions to simplify common GIS operations.
 
 ## Features
