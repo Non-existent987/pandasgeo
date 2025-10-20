@@ -12,18 +12,26 @@
 
 ## Installation
 
-You can install `pandasgeo` from PyPI:
+1、You can install `pandasgeo` from PyPI:
 
 ```bash
 pip install pandasgeo
 ```
 
-Or, install the latest version directly from the GitHub repository:
+2、Or, install the latest version directly from the GitHub repository:
 
 ```bash
 pip install git+https://github.com/Non-existent987/pandasgeo.git
 ```
-
+3、After downloading the project, it is convenient to import from local files for modification.
+```bash
+import sys
+import pandas as pd
+# Find the file path of the pandasgeo you downloaded.
+sys.path.insert(0, r'C:\Users\Administrator\Desktop\pandasgeo')
+# Now it can be imported.
+import pandasgeo as pdg
+```
 ## Quick Start
 
 Here is a simple example of how to use `pandasgeo`:
