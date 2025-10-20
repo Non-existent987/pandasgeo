@@ -1,4 +1,4 @@
-import pandasgeo as pdg
+import tablegis as tg
 import pytest
 import pandas as pd
 
@@ -13,7 +13,7 @@ def test_min_distance_onetable():
         'lat': [30.01, 30.05, 30.12]
     })
     
-    result = pdg.min_distance_onetable(df, lon='lon', lat='lat', idname='id', n=1)
+    result = tg.min_distance_onetable(df, lon='lon', lat='lat', idname='id', n=1)
     
     # 验证返回的DataFrame包含正确的列
     assert 'nearest1_id' in result.columns
@@ -27,7 +27,7 @@ def test_min_distance_onetable():
     assert result.loc[0, 'nearest1_distance'] > 0
     
     # 测试用例2: 查找最近2个点
-    result2 = pdg.min_distance_onetable(df, lon='lon', lat='lat', idname='id', n=2)
+    result2 = tg.min_distance_onetable(df, lon='lon', lat='lat', idname='id', n=2)
     
     # 验证包含mean_distance列
     assert 'mean_distance' in result2.columns
@@ -37,7 +37,7 @@ def test_min_distance_onetable():
     assert not pd.isna(result2.loc[0, 'mean_distance'])
     
     # 测试用例3: 包含自身点
-    result3 = pdg.min_distance_onetable(df, lon='lon', lat='lat', idname='id', n=1, include_self=True)
+    result3 = tg.min_distance_onetable(df, lon='lon', lat='lat', idname='id', n=1, include_self=True)
     
     # 验证每个点的最近点是自己
     for i in range(len(df)):
@@ -51,12 +51,12 @@ def test_min_distance_onetable():
         'latitude': [39.914, 39.918, 39.916]
     })
     
-    result4 = pdg.min_distance_onetable(df_custom, lon='longitude', lat='latitude', idname='point_id', n=1)
+    result4 = tg.min_distance_onetable(df_custom, lon='longitude', lat='latitude', idname='point_id', n=1)
     assert 'nearest1_point_id' in result4.columns
     
     # 测试用例5: 边界情况 - 空DataFrame
     df_empty = pd.DataFrame({'id': [], 'lon': [], 'lat': []})
-    result5 = pdg.min_distance_onetable(df_empty, lon='lon', lat='lat', idname='id', n=1)
+    result5 = tg.min_distance_onetable(df_empty, lon='lon', lat='lat', idname='id', n=1)
     assert len(result5) == 0
     
     # 测试用例6: 边界情况 - 单个点
@@ -65,19 +65,19 @@ def test_min_distance_onetable():
         'lon': [114.01],
         'lat': [30.01]
     })
-    result6 = pdg.min_distance_onetable(df_single, lon='lon', lat='lat', idname='id', n=1)
+    result6 = tg.min_distance_onetable(df_single, lon='lon', lat='lat', idname='id', n=1)
     assert pd.isna(result6.loc[0, 'nearest1_id'])
     
     # 测试用例7: 异常处理 - n < 1
     with pytest.raises(ValueError, match="n must be > 0"):
-        pdg.min_distance_onetable(df, lon='lon', lat='lat', idname='id', n=0)
+        tg.min_distance_onetable(df, lon='lon', lat='lat', idname='id', n=0)
     
     # 测试用例8: 异常处理 - 列名不存在
     with pytest.raises(ValueError, match="Longitude or latitude column not found"):
-        pdg.min_distance_onetable(df, lon='wrong_lon', lat='lat', idname='id', n=1)
+        tg.min_distance_onetable(df, lon='wrong_lon', lat='lat', idname='id', n=1)
     
     with pytest.raises(ValueError, match="ID column not found"):
-        pdg.min_distance_onetable(df, lon='lon', lat='lat', idname='wrong_id', n=1)
+        tg.min_distance_onetable(df, lon='lon', lat='lat', idname='wrong_id', n=1)
     
     print("✓ test_min_distance_onetable 所有测试通过!")
 
@@ -98,7 +98,7 @@ def test_min_distance_twotable():
         'lat2': [39.914, 39.918, 39.916]
     })
 
-    result = pdg.min_distance_twotable(df1, df2, lon1='lon1', lat1='lat1', 
+    result = tg.min_distance_twotable(df1, df2, lon1='lon1', lat1='lat1', 
                                     lon2='lon2', lat2='lat2', df2_id='id', n=1)
     
     # 验证返回的DataFrame包含正确的列
@@ -115,7 +115,7 @@ def test_min_distance_twotable():
     assert all(result['nearest1_distance'] >= 0)
     
     # 测试用例2: 查找最近2个点
-    result2 = pdg.min_distance_twotable(df1, df2, lon1='lon1', lat1='lat1', 
+    result2 = tg.min_distance_twotable(df1, df2, lon1='lon1', lat1='lat1', 
                                      lon2='lon2', lat2='lat2', df2_id='id', n=2)
     
     # 验证包含mean_distance列
@@ -126,7 +126,7 @@ def test_min_distance_twotable():
     assert not pd.isna(result2.loc[0, 'mean_distance'])
     
     # 测试用例3: n大于df2的点数
-    result3 = pdg.min_distance_twotable(df1, df2, lon1='lon1', lat1='lat1', 
+    result3 = tg.min_distance_twotable(df1, df2, lon1='lon1', lat1='lat1', 
                                      lon2='lon2', lat2='lat2', df2_id='id', n=5)
     
     # 验证超出的列被填充为NaN
@@ -135,17 +135,17 @@ def test_min_distance_twotable():
     
     # 测试用例4: 边界情况 - 空DataFrame
     df_empty = pd.DataFrame({'id': [], 'lon2': [], 'lat2': []})
-    result4 = pdg.min_distance_twotable(df1, df_empty, lon1='lon1', lat1='lat1', 
+    result4 = tg.min_distance_twotable(df1, df_empty, lon1='lon1', lat1='lat1', 
                                      lon2='lon2', lat2='lat2', df2_id='id', n=1)
     assert pd.isna(result4.loc[0, 'nearest1_id'])
     
     # 测试用例5: 异常处理 - n < 1
     with pytest.raises(ValueError, match="参数 n 必须大于等于 1"):
-        pdg.min_distance_twotable(df1, df2, lon1='lon1', lat1='lat1', 
+        tg.min_distance_twotable(df1, df2, lon1='lon1', lat1='lat1', 
                              lon2='lon2', lat2='lat2', df2_id='id', n=0)
     
     # 测试用例6: 指定CRS参数
-    result6 = pdg.min_distance_twotable(df1, df2, lon1='lon1', lat1='lat1', 
+    result6 = tg.min_distance_twotable(df1, df2, lon1='lon1', lat1='lat1', 
                                      lon2='lon2', lat2='lat2', df2_id='id', n=1,
                                      crs1='EPSG:4326', crs2='EPSG:4326')
     assert 'nearest1_distance' in result6.columns
@@ -154,7 +154,7 @@ def test_min_distance_twotable():
     df2_custom = df2.copy()
     df2_custom.rename(columns={'id': 'point_name'}, inplace=True)
     
-    result7 = pdg.min_distance_twotable(df1, df2_custom, lon1='lon1', lat1='lat1', 
+    result7 = tg.min_distance_twotable(df1, df2_custom, lon1='lon1', lat1='lat1', 
                                      lon2='lon2', lat2='lat2', df2_id='point_name', n=1)
     assert 'nearest1_point_name' in result7.columns
     
@@ -172,7 +172,7 @@ def test_distancea_str():
     expected_distance_meters = 111319.49
 
     # 调用函数计算距离
-    calculated_distance = pdg.distancea_str(lon1, lat1, lon2, lat2)
+    calculated_distance = tg.distancea_str(lon1, lat1, lon2, lat2)
 
     # 使用 pytest.approx 来比较浮点数，允许有一定的误差
     assert calculated_distance == pytest.approx(expected_distance_meters, rel=1e-4)
@@ -190,7 +190,7 @@ def test_add_points():
     df = pd.DataFrame(data)
 
     # 调用函数
-    gdf = pdg.add_points(df, lon='lon', lat='lat')
+    gdf = tg.add_points(df, lon='lon', lat='lat')
 
     # 验证返回的是否是GeoDataFrame
     assert 'geometry' in gdf.columns

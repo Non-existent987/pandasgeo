@@ -1,8 +1,8 @@
-# pandasgeo
+# tablegis
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-`pandasgeo` is a Python package for geospatial data processing and analysis, built on `geopandas`, `pandas`, `shapely`, and `pyproj`. It provides a series of utility functions to simplify common GIS operations.
+`tablegis` is a Python package for geospatial data processing and analysis, built on `geopandas`, `pandas`, `shapely`, and `pyproj`. It provides a series of utility functions to simplify common GIS operations.
 
 ## Features
 
@@ -14,36 +14,36 @@
 
 ## Installation
 
-1、You can install `pandasgeo` from PyPI:
+1、You can install `tablegis` from PyPI:
 
 ```bash
-pip install pandasgeo
+pip install tablegis
 ```
 
 2、Or, install the latest version directly from the GitHub repository:
 
 ```bash
-pip install git+https://github.com/Non-existent987/pandasgeo.git
+pip install git+https://github.com/Non-existent987/tablegis.git
 ```
 3、After downloading the project, it is convenient to import from local files for modification.
 ```bash
 import sys
 import pandas as pd
-# Find the file path of the pandasgeo you downloaded.
-sys.path.insert(0, r'C:\Users\Administrator\Desktop\pandasgeo')
+# Find the file path of the tablegis you downloaded.
+sys.path.insert(0, r'C:\Users\Administrator\Desktop\tablegis')
 # Now it can be imported.
-import pandasgeo as pdg
+import tablegis as tg
 ```
 
 ## Quick Start
 
-Here is a simple example of how to use `pandasgeo`:
+Here is a simple example of how to use `tablegis`:
 
 ### 1. Find the nearest point (in df2) for each point in df1 and add its ID, longitude, latitude, and distance.
 
 ```python
 import pandas as pd
-import pandasgeo as pdg
+import tablegis as tg
 
 # Create two example DataFrames
 df1 = pd.DataFrame({
@@ -59,9 +59,9 @@ df2 = pd.DataFrame({
 })
 
 # Calculate the nearest 1 point
-result = pdg.min_distance_twotable(df1, df2, lon1='lon1', lat1='lat1', lon2='lon2', lat2='lat2', df2_id='id', n=1)
+result = tg.min_distance_twotable(df1, df2, lon1='lon1', lat1='lat1', lon2='lon2', lat2='lat2', df2_id='id', n=1)
 # Calculate the nearest 2 points
-result2 = pdg.min_distance_twotable(df1, df2, lon1='lon1', lat1='lat1', lon2='lon2', lat2='lat2', df2_id='id', n=2)
+result2 = tg.min_distance_twotable(df1, df2, lon1='lon1', lat1='lat1', lon2='lon2', lat2='lat2', df2_id='id', n=2)
 
 print("\nExample result (distance in meters):")
 print(result)
@@ -114,7 +114,7 @@ print(result2)
 
 ```python
 import pandas as pd
-import pandasgeo as pdg
+import tablegis as tg
 
 # Create an example DataFrame
 df2 = pd.DataFrame({
@@ -124,9 +124,9 @@ df2 = pd.DataFrame({
 })
 
 # Calculate the nearest 1 point
-result = pdg.min_distance_onetable(df2, 'lon2', 'lat2', idname='id', n=1)
+result = tg.min_distance_onetable(df2, 'lon2', 'lat2', idname='id', n=1)
 # Calculate the nearest 2 points
-result2 = pdg.min_distance_onetable(df2, 'lon2', 'lat2', idname='id', n=2)
+result2 = tg.min_distance_onetable(df2, 'lon2', 'lat2', idname='id', n=2)
 
 print("\nExample result (distance in meters):")
 print(result)
