@@ -2,7 +2,7 @@ import tablegis as tg
 import pytest
 import pandas as pd
 import numpy as np
-from tablegis.utils import to_lonlat, wgs84_to_gcj02, gcj02_to_wgs84, wgs84_to_bd09, bd09_to_wgs84, transform
+from tablegis.utils import wgs84_to_gcj02, gcj02_to_wgs84, wgs84_to_bd09, bd09_to_wgs84, transform
 
 def test_min_distance_onetable():
     """测试 min_distance_onetable 函数"""
