@@ -156,6 +156,32 @@ print(result2)
 |  1 | p2 | 114.05 | 30.05 | p1          | 114.01        | 30.01         | 5881.336911       | p3          | 114.12        | 30.12         | 10289.545038      | 8085.440974   |
 |  2 | p3 | 114.12 | 30.12 | p2          | 114.05        | 30.05         | 10289.545038      | p1          | 114.01        | 30.01         | 16170.880987      | 13230.213012  |
 
+### 3、Replace the longitude and latitude columns in the table with the corresponding values in another coordinate system, and add a new column for longitude and latitude.
+```python
+import pandas as pd
+import tablegis as tg
+
+# Create two sample DataFrames
+df = pd.DataFrame({
+    'id': ['A', 'B', 'C', 'D'],
+    'lon': [116.403, 116.407, 116.404, 116.408],
+    'lat': [39.914, 39.918, 39.916, 39.919]
+})
+
+# Convert the latitude and longitude in the 84 coordinate system to the latitude and longitude in the web_mercator system.
+result = tg.to_lonlat(df,'lon','lat', from_crs="wgs84", to_crs="web_mercator")
+print(result)
+```
+**Result Display:**  
+**Added two columns of "web_mercator"：**
+| id  | lon      | lat      | web_mercator_lon | web_mercator_lat |
+| --- | -------- | -------- | ---------------- | ---------------- |
+| A   | 116.403  | 39.914   | 12957922.69      | 4853452.853      |
+| B   | 116.407  | 39.918   | 12958367.96      | 4854033.408      |
+| C   | 116.404  | 39.916   | 12958034.01      | 4853743.126      |
+| D   | 116.408  | 39.919   | 12958479.28      | 4854178.552      |
+
+
 ## Contributing
 
 Contributions in all forms are welcome, including feature requests, bug reports, and code contributions.
