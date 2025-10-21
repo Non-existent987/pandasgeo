@@ -284,7 +284,7 @@ def min_distance_twotable(df1, df2, lon1='lon1', lat1='lat1', lon2='lon2', lat2=
     if k == 1:
         distances = distances.reshape(-1, 1)
         indices = indices.reshape(-1, 1)
-    
+
     # 添加最近邻信息
     for i in range(k):
         nearest_points = df2.iloc[indices[:, i]]
@@ -309,3 +309,19 @@ def min_distance_twotable(df1, df2, lon1='lon1', lat1='lat1', lon2='lon2', lat2=
             result['mean_distance'] = np.nan
     
     return result
+
+def to_lonlat(df, lon, lat, from_crs, to_crs):
+    """
+    作用：在df上添加转换后的经纬度'。
+    - df:DataFrame
+    - lon, lat: 列名（字符串）
+    - from_crs, to_crs: 支持的坐标系标识{"wgs84", "web_mercator", "cgcs2000", "gcj02", "bd09"}
+        - "wgs84"       : EPSG:4326 (经纬度，WGS84，GPS 设备、北斗原始数据，通俗意义上的经纬度)
+        - "web_mercator": EPSG:3857 (Web Mercator，Web地图采用，单位：米)
+        - "cgcs2000"    : EPSG:4490 (中国国家大地坐标系，用于官方测绘、国土等领域)
+        - "gcj02"       : 中国火星坐标系（加密偏移，高德、腾讯、谷歌中国地图等采用）
+        - "bd09"        : 百度坐标系（在 GCJ02 基础上再加密，百度地图专用）
+    返回：带新增列的 DataFrame
+    抛错：当 from_crs 或 to_crs 非支持集合时抛 ValueError
+    """
+    return to_lonlat_utils(df, lon, lat, from_crs, to_crs)

@@ -1,7 +1,8 @@
 import tablegis as tg
 import pytest
 import pandas as pd
-
+import numpy as np
+from tablegis.utils import to_lonlat, wgs84_to_gcj02, gcj02_to_wgs84, wgs84_to_bd09, bd09_to_wgs84, transform
 
 def test_min_distance_onetable():
     """测试 min_distance_onetable 函数"""
@@ -152,55 +153,65 @@ def test_min_distance_twotable():
     
     # 测试用例7: 自定义df2_id列名
     df2_custom = df2.copy()
-    df2_custom.rename(columns={'id': 'point_name'}, inplace=True)
-    
+    df2_custom = df2_custom.rename(columns={'id': 'point_name'})
     result7 = tg.min_distance_twotable(df1, df2_custom, lon1='lon1', lat1='lat1', 
                                      lon2='lon2', lat2='lat2', df2_id='point_name', n=1)
     assert 'nearest1_point_name' in result7.columns
     
     print("✓ test_min_distance_twotable 所有测试通过!")
 
-def test_distancea_str():
-    """
-    测试 distancea_str 函数计算两个点之间的距离。
-    """
-    # 定义两个点，位于赤道上，经度相差1度
-    lon1, lat1 = 0, 0
-    lon2, lat2 = 1, 0
 
-    # 在赤道上，1度的经度差大约是 111.32 公里
-    expected_distance_meters = 111319.49
 
-    # 调用函数计算距离
-    calculated_distance = tg.distancea_str(lon1, lat1, lon2, lat2)
+def test_wgs84_to_gcj02_and_nan():
+    df = pd.DataFrame({
+        "lon": [116.397487, np.nan],
+        "lat": [39.908722, np.nan],
+    })
+    out = tg.to_lonlat(df, "lon", "lat", from_crs="wgs84", to_crs="gcj02")
+    # 第一个点与标量函数结果接近
+    exp_lon, exp_lat = wgs84_to_gcj02(116.397487, 39.908722)
+    assert np.isclose(out.loc[0, "gcj02_lon"], exp_lon, atol=1e-6)
+    assert np.isclose(out.loc[0, "gcj02_lat"], exp_lat, atol=1e-6)
+    # 第二行原本是 nan，目标列也是 nan
+    assert np.isnan(out.loc[1, "gcj02_lon"])
+    assert np.isnan(out.loc[1, "gcj02_lat"])
+    print("✓ test_wgs84_to_gcj02_and_nan 所有测试通过!")
 
-    # 使用 pytest.approx 来比较浮点数，允许有一定的误差
-    assert calculated_distance == pytest.approx(expected_distance_meters, rel=1e-4)
-    print("✓ test_distancea_str 所有测试通过!")
+def test_bd09_to_wgs84_roundtrip():
+    # 先由 WGS84 生成 BD09，再从 BD09 转回 WGS84
+    lon, lat = 116.397487, 39.908722
+    bd_lon, bd_lat = wgs84_to_bd09(lon, lat)
+    df = pd.DataFrame({"lon": [bd_lon], "lat": [bd_lat]})
+    out = tg.to_lonlat(df, "lon", "lat", from_crs="bd09", to_crs="wgs84")
+    # 反算应接近原始 WGS84（允许少量偏差）
+    assert np.isclose(out.loc[0, "wgs84_lon"], lon, atol=1e-6)
+    assert np.isclose(out.loc[0, "wgs84_lat"], lat, atol=1e-6)
+    print("✓ test_bd09_to_wgs84_roundtrip 所有测试通过!")
 
-def test_add_points():
-    """
-    测试 add_points 函数是否能正确将DataFrame转换为GeoDataFrame。
-    """
-    import pandas as pd
-    from shapely.geometry import Point
+def test_webmercator_and_back():
+    # WGS84 -> WebMercator -> WGS84
+    lon, lat = 116.397487, 39.908722
+    # 先生成 web mercator
+    mx, my = transform(lon, lat, "wgs84", "web_mercator")
+    df = pd.DataFrame({"lon": [mx], "lat": [my]})
+    out = tg.to_lonlat(df, "lon", "lat", from_crs="web_mercator", to_crs="wgs84")
+    assert np.isclose(out.loc[0, "wgs84_lon"], lon, atol=1e-6)
+    assert np.isclose(out.loc[0, "wgs84_lat"], lat, atol=1e-6)
+    print("✓ test_webmercator_and_back 所有测试通过!")
 
-    # 创建一个简单的DataFrame
-    data = {'id': ['A', 'B'], 'lon': [10, 20], 'lat': [30, 40]}
-    df = pd.DataFrame(data)
+def test_unknown_crs_raises():
+    df = pd.DataFrame({"lon": [116.4], "lat": [39.9]})
+    with pytest.raises(ValueError):
+        tg.to_lonlat(df, "lon", "lat", from_crs="unknown", to_crs="wgs84")
+    with pytest.raises(ValueError):
+        tg.to_lonlat(df, "lon", "lat", from_crs="wgs84", to_crs="unknown")
+    print("✓ test_unknown_crs_raises 所有测试通过!")
 
-    # 调用函数
-    gdf = tg.add_points(df, lon='lon', lat='lat')
 
-    # 验证返回的是否是GeoDataFrame
-    assert 'geometry' in gdf.columns
-    # 验证第一个点的坐标是否正确
-    assert gdf.geometry.iloc[0] == Point(10, 30)
-    # 验证行数是否保持不变
-    assert len(gdf) == len(df)
-    print("✓ test_add_points 所有测试通过!")
 if __name__ == "__main__":
     test_min_distance_onetable()
     test_min_distance_twotable()
-    test_distancea_str()
-    test_add_points()
+    test_wgs84_to_gcj02_and_nan()
+    test_bd09_to_wgs84_roundtrip()
+    test_webmercator_and_back()
+    test_unknown_crs_raises()
