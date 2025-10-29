@@ -207,6 +207,54 @@ def test_unknown_crs_raises():
         tg.to_lonlat(df, "lon", "lat", from_crs="wgs84", to_crs="unknown")
     print("✓ test_unknown_crs_raises 所有测试通过!")
 
+def test_add_buffer():
+    """测试 add_buffer 函数的基本功能"""
+    import pandas as pd
+    import geopandas as gpd
+    
+    # 测试1: 基本固定距离
+    df = pd.DataFrame({
+        'lon': [116.4074, 121.4737],
+        'lat': [39.9042, 31.2304],
+        'name': ['北京', '上海']
+    })
+    
+    result = add_buffer(df, lon='lon', lat='lat', dis=1000)
+    
+    assert isinstance(result, gpd.GeoDataFrame), "返回类型应该是 GeoDataFrame"
+    assert result.crs.to_string() == "EPSG:4326", "CRS 应该是 EPSG:4326"
+    assert len(result) == 2, "应该返回2行数据"
+    assert all(result.geometry.geom_type == 'Polygon'), "几何类型应该是 Polygon"
+    assert 'name' in result.columns, "原始列应该保留"
+    
+    # 测试2: 使用列名指定距离
+    df2 = pd.DataFrame({
+        'lon': [116.4074, 121.4737],
+        'lat': [39.9042, 31.2304],
+        'buffer_size': [500, 1000]
+    })
+    
+    result2 = add_buffer(df2, lon='lon', lat='lat', dis='buffer_size')
+    assert len(result2) == 2, "应该返回2行数据"
+    
+    # 测试3: 错误处理 - 缺失列
+    df3 = pd.DataFrame({'x': [116.4074], 'y': [39.9042]})
+    try:
+        add_buffer(df3, lon='lon', lat='lat', dis=1000)
+        assert False, "应该抛出 ValueError"
+    except ValueError as e:
+        assert "Missing columns" in str(e)
+    
+    # 测试4: 错误处理 - 无效经度
+    df4 = pd.DataFrame({'lon': [200.0], 'lat': [39.9042]})
+    try:
+        add_buffer(df4, dis=1000)
+        assert False, "应该抛出 ValueError"
+    except ValueError as e:
+        assert "坐标数据异常" in str(e)
+    
+    print("✓ test_add_buffer 所有测试通过!")
+
 
 if __name__ == "__main__":
     test_min_distance_onetable()
@@ -215,3 +263,4 @@ if __name__ == "__main__":
     test_bd09_to_wgs84_roundtrip()
     test_webmercator_and_back()
     test_unknown_crs_raises()
+    test_add_buffer()

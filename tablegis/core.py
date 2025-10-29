@@ -2,6 +2,7 @@
 # coding: utf-8
 import pandas as pd
 import numpy as np
+import geopandas as gpd
 from scipy.spatial import cKDTree
 import pyproj
 from .utils import *
@@ -325,3 +326,71 @@ def to_lonlat(df, lon, lat, from_crs, to_crs):
     抛错：当 from_crs 或 to_crs 非支持集合时抛 ValueError
     """
     return to_lonlat_utils(df, lon, lat, from_crs, to_crs)
+
+
+def add_buffer(df, lon='lon', lat='lat',
+                       dis=None, geometry='geometry'):
+    """
+    创建精确的以“米”为单位的 buffer，基于正确的 UTM 投影。
+
+    参数:
+        df: DataFrame 含经纬度
+        lon, lat: 经纬度列名
+        dis: 字符串表示用距离的字段，数字表示固定距离单位（米）
+        geometry: 输出几何列名
+
+    返回:
+        GeoDataFrame: 包含精确 buffer 的多边形，CRS=4326
+    """
+    df = df.copy()
+    # 检查列是否存在
+    if lon not in df.columns or lat not in df.columns:
+        raise ValueError(f"Missing columns: {lon}, {lat}")
+    # 2. 数据验证
+    lon_values = df[lon].dropna()
+    lat_values = df[lat].dropna()
+    
+    # 检查是否有空值
+    if len(lon_values) == 0 or len(lat_values) == 0:
+        raise ValueError("经纬度列包含全部空值")
+    # 检查经度范围 (-180 到 180)
+    lon_min, lon_max = lon_values.min(), lon_values.max()
+    lat_min, lat_max = lat_values.min(), lat_values.max()
+    
+    invalid_lon = (lon_min < -180) or (lon_max > 180)
+    invalid_lat = (lat_min < -90) or (lat_max > 90)
+
+    # 3. 处理异常情况
+    if invalid_lon or invalid_lat:
+        error_msg = f"坐标数据异常:\n"
+        error_msg += f"  经度范围: [{lon_min:.4f}, {lon_max:.4f}] (标准: -180 到 180)\n"
+        error_msg += f"  纬度范围: [{lat_min:.4f}, {lat_max:.4f}] (标准: -90 到 90)\n"
+        raise ValueError(error_msg)
+
+    # 计算中心点以确定最佳 UTM zone
+    center_lon = df[lon].mean()
+    center_lat = df[lat].mean()
+    # 判断 UTM zone number
+    utm_zone = int((center_lon + 180) // 6) + 1
+    # 北半球 EPSG: 326XX；南半球 EPSG: 327XX
+    hemisphere = 32600 if center_lat >= 0 else 32700
+    target_crs = f"EPSG:{hemisphere + utm_zone}"
+    print(f"Center: ({center_lon:.4f}, {center_lat:.4f}) → UTM Zone {utm_zone} {'N' if center_lat>=0 else 'S'} → {target_crs}")
+    # 创建点并指定原始 CRS
+    gdf = gpd.GeoDataFrame(
+        df,
+        geometry=gpd.points_from_xy(df[lon], df[lat]),
+        crs="EPSG:4326"
+    )
+    # 转到 UTM 进行 buffer（此时单位是米）
+    gdf_utm = gdf.to_crs(target_crs)
+    if type(dis) == str:
+        gdf_utm[geometry] = gdf_utm[[geometry, dis]].apply(lambda x: x.iloc[0].buffer(x.iloc[1]), axis=1)
+    elif type(dis) == float or type(dis) == int:
+        gdf_utm[geometry] = gdf_utm.geometry.buffer(dis)
+    else:
+        raise ValueError(f"type Error: {dis}")
+    
+    # 转回 WGS84 便于可视化
+    result = gdf_utm.set_geometry(geometry).to_crs("EPSG:4326")
+    return result

@@ -182,6 +182,48 @@ print(result)
 | D   | 116.408  | 39.919   | 12958479.28      | 4854178.552      |
 
 
+### 4、Generate buffers of the specified range based on the longitude and latitude columns in the table and add the geometry.
+```python
+import pandas as pd
+import tablegis as tg
+
+df = pd.DataFrame({
+        'lon': [116.4074, 121.4737],
+        'lat': [39.9042, 31.2304],
+        'buffer_size': [500, 1000]
+    })
+# Set a 100-meter buffer zone
+res_100 = tg.add_buffer(df,'lon','lat',100) 
+# Set the buffer range according to the numbers in the "buffer_size" column.
+res_buffer_size = tg.add_buffer(df,'lon','lat','buffer_size')
+print(res_100)
+print(res_buffer_size)
+```
+**Result Display:**
+## df table
+
+|   | lon      | lat     | buffer_size |
+|---|----------|---------|-------------|
+| 0 | 116.4074 | 39.9042 | 500         |
+| 1 | 121.4737 | 31.2304 | 1000        |
+
+## Set a 100-meter buffer zone
+
+|   | lon      | lat     | buffer_size | geometry                                        |
+|---|----------|---------|-------------|-------------------------------------------------|
+| 0 | 116.4074 | 39.9042 | 500         | POLYGON ((116.40857 39.90421, 116.40856 39.904... |
+| 1 | 121.4737 | 31.2304 | 1000        | POLYGON ((121.47475 31.23036, 121.47474 31.230... |
+
+## Set the buffer range according to the numbers in the "buffer_size" column.
+
+|   | lon      | lat     | buffer_size | geometry                                        |
+|---|----------|---------|-------------|-------------------------------------------------|
+| 0 | 116.4074 | 39.9042 | 500         | POLYGON ((116.41325 39.90423, 116.41322 39.903... |
+| 1 | 121.4737 | 31.2304 | 1000        | POLYGON ((121.48417 31.23003, 121.48408 31.229... |
+
+
+
+
 ## Contributing
 
 Contributions in all forms are welcome, including feature requests, bug reports, and code contributions.
