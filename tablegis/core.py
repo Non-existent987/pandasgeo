@@ -3,6 +3,7 @@
 import pandas as pd
 import numpy as np
 import geopandas as gpd
+from shapely.geometry import Point
 from scipy.spatial import cKDTree
 import pyproj
 from .utils import *
@@ -328,8 +329,7 @@ def to_lonlat(df, lon, lat, from_crs, to_crs):
     return to_lonlat_utils(df, lon, lat, from_crs, to_crs)
 
 
-def add_buffer(df, lon='lon', lat='lat',
-                       dis=None, geometry='geometry'):
+def add_buffer(df, lon='lon', lat='lat',dis=None, geometry='geometry'):
     """
     创建精确的以“米”为单位的 buffer，基于正确的 UTM 投影。
 
@@ -393,4 +393,163 @@ def add_buffer(df, lon='lon', lat='lat',
     
     # 转回 WGS84 便于可视化
     result = gdf_utm.set_geometry(geometry).to_crs("EPSG:4326")
+    return result
+
+def add_points(df1, lon='lon', lat='lat', geometry='geometry',crs='epsg:4326'):
+    """
+    将具有经度和纬度列的 DataFrame 转换为具有 Point 几何图形的 GeoDataFrame。
+    
+    参数
+    ----------
+    df1 : pandas.DataFrame
+    lon : str, 填写精度的列名
+    lat : str, 填写纬度的列名
+    geometry : str, 默认geometry,添加的geometry列名
+    crs : str,默认使用4326
+    
+    返回：geopandas.GeoDataFrame
+    
+    报错
+    ------
+    列名错误
+        如果指定的经度或纬度列不在数据框中。
+    值错误
+        如果数据框为空，或者坐标值无效。
+    
+    举例
+    --------
+    import pandas as pd
+    df = pd.DataFrame({
+        'lon': [116.4074, 121.4737],
+        'lat': [39.9042, 31.2304],
+        'city': ['Beijing', 'Shanghai']
+    })
+    gdf = add_points(df)
+    print(type(gdf))
+    <class 'geopandas.geodataframe.GeoDataFrame'>
+    
+    # 使用自定义列名
+    df2 = pd.DataFrame({
+        'longitude': [116.4074],
+        'latitude': [39.9042]
+    })
+    gdf2 = add_points(df2, lon='longitude', lat='latitude')
+    
+    说明
+    -----
+    - 坐标值应为有效的经度（-180 至 180）和纬度（-90 至 90）。
+    """
+    # 验证输入
+    if df1 is None or df1.empty:
+        raise ValueError("Input DataFrame is empty or None")
+    
+    if lon not in df1.columns:
+        raise KeyError(f"Longitude column '{lon}' not found in DataFrame")
+    
+    if lat not in df1.columns:
+        raise KeyError(f"Latitude column '{lat}' not found in DataFrame")
+    
+    # 创建一个副本以避免修改原始的数据框
+    df = df1.copy()
+    
+    # 创建点几何体
+    df[geometry] = [Point(x, y) for x, y in zip(df[lon], df[lat])]
+    
+    # 创建地理数据框
+    df_p = gpd.GeoDataFrame(df, crs="epsg:4326", geometry=geometry)
+    
+    return df_p
+
+def add_buffer_groupbyid(df, lon='lon', lat='lat', distance=50,
+                         columns_name='聚合id', id_label_prefix='聚合_', geom=False):
+    """
+    按照给定的距离将点位聚合在一起，添加聚合ID列用于标识。
+    该函数通过创建缓冲区、融合重叠区域、然后将原始点位与聚合区域关联，
+    实现点位的空间聚类。
+    
+    参数
+    ----------
+    df : pd.DataFrame
+        包含经纬度信息的DataFrame
+    lon : str, optional
+        经度字段名，默认为 'lon'
+    lat : str, optional
+        纬度字段名，默认为 'lat'
+    distance : float, optional
+        聚合的缓冲距离（单位取决于坐标系统），默认为 50
+    columns_name : str, optional
+        添加的聚合ID列名，默认为 '聚合id'
+    id_label_prefix : str, optional
+        聚合ID的前缀，默认为 '聚合_'
+        例如：'聚合_' 会生成 '聚合_0', '聚合_1' 等
+    geom : bool, optional
+        是否返回包含geometry列的GeoDataFrame，默认为 False
+        当为 True 时，geometry列包含聚合后的多边形区域
+        当为 False 时，不包含geometry列
+    
+    Returns
+    -------
+    pd.DataFrame or gpd.GeoDataFrame
+        添加了聚合ID列的数据框
+        如果 geom=True，返回GeoDataFrame且geometry列为聚合多边形
+        如果 geom=False，返回DataFrame且不包含geometry列
+    
+    举例
+    --------
+    import pandas as pd
+    data = pd.DataFrame({
+        'lon': [116.40, 116.41, 116.50],
+        'lat': [39.90, 39.91, 39.95],
+        'name': ['A', 'B', 'C']
+    })
+    
+    # 不返回几何信息
+    result = add_buffer_groupbyid(data, distance=1000)
+    
+    # 返回聚合多边形几何信息
+    result_with_geom = add_buffer_groupbyid(data, distance=1000, geom=True)
+    """
+    
+    # 参数验证
+    if lon not in df.columns or lat not in df.columns:
+        raise ValueError(f"Columns '{lon}' and '{lat}' must exist in dataframe")
+    
+    # 创建缓冲区
+    data_buffer = add_buffer(df, lon, lat, distance)
+    
+    # 融合重叠的缓冲区
+    data_dissolve = data_buffer[['geometry']].dissolve()
+    
+    # 分解多部件几何为单个几何
+    data_explode = data_dissolve.explode(index_parts=False).reset_index(drop=True)[['geometry']]
+    
+    # 添加聚合ID
+    data_explode[columns_name] = id_label_prefix + data_explode.index.astype(str)
+    
+    # 创建点几何
+    data_points = add_points(df, lon, lat)
+    
+    # 空间连接：将点与聚合区域关联
+    data_sjoin = gpd.sjoin(data_points, data_explode, how='left', predicate='intersects')
+    
+    if geom:
+        # 保留geometry列，但使用聚合多边形替换点几何
+        # 先获取原始数据列和聚合ID
+        data_columns = list(df.columns) + [columns_name]
+        result = data_sjoin[data_columns].copy()
+        
+        # 通过聚合ID关联回多边形geometry
+        result = result.merge(
+            data_explode[[columns_name, 'geometry']], 
+            on=columns_name, 
+            how='left'
+        )
+        
+        # 转换为GeoDataFrame
+        result = gpd.GeoDataFrame(result, geometry='geometry', crs=data_explode.crs)
+    else:
+        # 不保留geometry列
+        data_columns = list(df.columns) + [columns_name]
+        result = data_sjoin[data_columns].copy()
+    
     return result

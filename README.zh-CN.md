@@ -221,6 +221,80 @@ print(res_buffer_size)
 
 
 
+### 5、将表格中的经纬度列生成点状geometry变成gdf
+```python
+import pandas as pd
+import tablegis as tg
+
+df = pd.DataFrame({
+        'lon': [116.4074, 121.4737, 113.2644],
+        'lat': [39.9042, 31.2304, 23.1291],
+        'city': ['Beijing', 'Shanghai', 'Guangzhou']
+    })
+# 按照经纬度生成点 
+result1 = tg.add_points(df)
+print(result1)
+```
+结果展示：  
+
+| lon       | lat        | city      | geometry                     |
+|-----------|------------|-----------|------------------------------|
+| 116.4074  | 39.9042    | Beijing   | POINT (116.4074 39.9042)     |
+| 121.4737  | 31.2304    | Shanghai  | POINT (121.4737 31.2304)     |
+| 113.2644  | 23.1291    | Guangzhou | POINT (113.2644 23.1291)     |
+
+
+### 6、将表格中的经纬度进行汇聚使用扩充再融合的方法，添加融合后的id以及范围geom
+```python
+import pandas as pd
+import tablegis as tg
+# 准备测试数据
+test_data = pd.DataFrame({
+    'lon': [116.40, 116.41, 116.50, 116.51],
+    'lat': [39.90, 39.91, 39.95, 39.96],
+    'name': ['A', 'B', 'C', 'D'],
+    'value': [1, 2, 3, 4]
+})
+
+# 测试1: 返回geometry
+result_no_geom = tg.add_buffer_groupbyid(
+    test_data, 
+    lon='lon', 
+    lat='lat',
+    distance=1000,
+    columns_name='group_id',
+    id_label_prefix='id_',
+    geom=True
+)
+# 测试1: 不返回geometry
+result_geom = tg.add_buffer_groupbyid(
+    test_data, 
+    lon='lon', 
+    lat='lat',
+    distance=1000,
+    columns_name='group_id',
+    id_label_prefix='id_',
+    geom=False
+)
+```
+结果展示：  
+## 不带geom
+| lon   | lat   | name | value | group_id |
+|-------|-------|------|-------|----------|
+| 116.40| 39.90 | A    | 1     | id_0     |
+| 116.41| 39.91 | B    | 2     | id_0     |
+| 116.50| 39.95 | C    | 3     | id_1     |
+| 116.51| 39.96 | D    | 4     | id_1     |
+
+## 带geom
+| lon   | lat   | name | value | group_id | geometry |
+|-------|-------|------|-------|----------|---------|
+| 116.40| 39.90 | A    | 1     | id_0     | POLYGON ((116.41149 39.8983, 116.41122 39.8974...) |
+| 116.41| 39.91 | B    | 2     | id_0     | POLYGON ((116.41149 39.8983, 116.41122 39.8974...) |
+| 116.50| 39.95 | C    | 3     | id_1     | POLYGON ((116.51149 39.94829, 116.51122 39.947...) |
+| 116.51| 39.96 | D    | 4     | id_1     | POLYGON ((116.51149 39.94829, 116.51122 39.947...) |
+
+
 ## 贡献
 
 欢迎各种形式的贡献，包括功能请求、错误报告和代码贡献。

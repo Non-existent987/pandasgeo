@@ -2,6 +2,9 @@ import tablegis as tg
 import pytest
 import pandas as pd
 import numpy as np
+import pandas as pd
+import geopandas as gpd
+from shapely.geometry import Point, Polygon
 from tablegis.utils import wgs84_to_gcj02, gcj02_to_wgs84, wgs84_to_bd09, bd09_to_wgs84, transform
 
 def test_min_distance_onetable():
@@ -219,7 +222,7 @@ def test_add_buffer():
         'name': ['北京', '上海']
     })
     
-    result = add_buffer(df, lon='lon', lat='lat', dis=1000)
+    result = tg.add_buffer(df, lon='lon', lat='lat', dis=1000)
     
     assert isinstance(result, gpd.GeoDataFrame), "返回类型应该是 GeoDataFrame"
     assert result.crs.to_string() == "EPSG:4326", "CRS 应该是 EPSG:4326"
@@ -234,13 +237,13 @@ def test_add_buffer():
         'buffer_size': [500, 1000]
     })
     
-    result2 = add_buffer(df2, lon='lon', lat='lat', dis='buffer_size')
+    result2 = tg.add_buffer(df2, lon='lon', lat='lat', dis='buffer_size')
     assert len(result2) == 2, "应该返回2行数据"
     
     # 测试3: 错误处理 - 缺失列
     df3 = pd.DataFrame({'x': [116.4074], 'y': [39.9042]})
     try:
-        add_buffer(df3, lon='lon', lat='lat', dis=1000)
+        tg.add_buffer(df3, lon='lon', lat='lat', dis=1000)
         assert False, "应该抛出 ValueError"
     except ValueError as e:
         assert "Missing columns" in str(e)
@@ -248,13 +251,142 @@ def test_add_buffer():
     # 测试4: 错误处理 - 无效经度
     df4 = pd.DataFrame({'lon': [200.0], 'lat': [39.9042]})
     try:
-        add_buffer(df4, dis=1000)
+        tg.add_buffer(df4, dis=1000)
         assert False, "应该抛出 ValueError"
     except ValueError as e:
         assert "坐标数据异常" in str(e)
     
     print("✓ test_add_buffer 所有测试通过!")
 
+def test_add_points():
+    """
+    “添加点数”测试函数。
+    测试基本功能、自定义列名以及错误处理机制。
+    """
+    
+    # 测试 1：使用默认列名的基本功能
+    df1 = pd.DataFrame({
+        'lon': [116.4074, 121.4737, 113.2644],
+        'lat': [39.9042, 31.2304, 23.1291],
+        'city': ['Beijing', 'Shanghai', 'Guangzhou']
+    })
+    
+    result1 = tg.add_points(df1)
+    assert isinstance(result1, gpd.GeoDataFrame), "Result should be a GeoDataFrame"
+    assert 'geometry' in result1.columns, "Geometry column should exist"
+    assert len(result1) == 3, "Should have 3 rows"
+    assert result1.crs.to_string() == "EPSG:4326", "CRS should be EPSG:4326"
+    assert all(isinstance(geom, Point) for geom in result1.geometry), "All geometries should be Points"
+
+    
+    # 测试 2：自定义列名
+    df2 = pd.DataFrame({
+        'longitude': [0.0, 10.0],
+        'latitude': [0.0, 20.0],
+        'name': ['Point A', 'Point B']
+    })
+    
+    result2 = tg.add_points(df2, lon='longitude', lat='latitude', geometry='geom')
+    assert 'geom' in result2.columns, "Custom geometry column should exist"
+    assert result2.geometry.name == 'geom', "Geometry column name should be 'geom'"
+
+    
+    # 测试 3：验证原始数据框未被修改
+    df3 = pd.DataFrame({'lon': [1.0], 'lat': [2.0]})
+    original_columns = df3.columns.tolist()
+    tg.add_points(df3)
+    assert df3.columns.tolist() == original_columns, "Original DataFrame should not be modified"
+
+    
+    # 测试 4：错误处理 - 缺失列
+    df4 = pd.DataFrame({'x': [1.0], 'y': [2.0]})
+    try:
+        tg.add_points(df4)
+        assert False, "Should raise KeyError for missing columns"
+    except KeyError:
+        pass
+    
+    # 测试 5：错误处理 - 空数据框
+    df5 = pd.DataFrame({'lon': [], 'lat': []})
+    try:
+        tg.add_points(df5)
+        assert False, "Should raise ValueError for empty DataFrame"
+    except ValueError:
+        pass
+    
+    # 测试 6：验证坐标值
+    df6 = pd.DataFrame({'lon': [100.5], 'lat': [50.5]})
+    result6 = tg.add_points(df6)
+    point = result6.geometry.iloc[0]
+    assert point.x == 100.5, "Longitude value should match"
+    assert point.y == 50.5, "Latitude value should match"
+    print("✓ test_add_points 所有测试通过!")
+
+def test_add_buffer_groupbyid():
+    """
+    测试 add_buffer_groupbyid 函数的功能
+    """
+    
+    # 准备测试数据
+    test_data = pd.DataFrame({
+        'lon': [116.40, 116.41, 116.50, 116.51],
+        'lat': [39.90, 39.91, 39.95, 39.96],
+        'name': ['A', 'B', 'C', 'D'],
+        'value': [1, 2, 3, 4]
+    })
+    
+    # 测试1: 不返回geometry
+    result_no_geom = tg.add_buffer_groupbyid(
+        test_data, 
+        lon='lon', 
+        lat='lat',
+        distance=1000,
+        geom=False
+    )
+    
+    assert isinstance(result_no_geom, pd.DataFrame), "应该返回DataFrame"
+    assert 'geometry' not in result_no_geom.columns, "不应包含geometry列"
+    assert '聚合id' in result_no_geom.columns, "应该包含聚合id列"
+    assert all(col in result_no_geom.columns for col in test_data.columns), "应保留原始列"
+    
+    # 测试2: 返回geometry（多边形）
+    result_with_geom = tg.add_buffer_groupbyid(
+        test_data,
+        lon='lon',
+        lat='lat', 
+        distance=1000,
+        geom=True
+    )
+    
+    assert isinstance(result_with_geom, gpd.GeoDataFrame), "应该返回GeoDataFrame"
+    assert 'geometry' in result_with_geom.columns, "应该包含geometry列"
+    assert '聚合id' in result_with_geom.columns, "应该包含聚合id列"
+    
+    # 验证geometry是多边形而不是点
+    for geom in result_with_geom.geometry.dropna():
+        assert isinstance(geom, Polygon), f"geometry应该是Polygon类型，但是 {type(geom)}"
+    
+    # 测试3: 自定义列名和前缀
+    result_custom = tg.add_buffer_groupbyid(
+        test_data,
+        columns_name='cluster_id',
+        id_label_prefix='C_',
+        geom=False
+    )
+    
+    assert 'cluster_id' in result_custom.columns, "应该使用自定义列名"
+    assert result_custom['cluster_id'].iloc[0].startswith('C_'), "应该使用自定义前缀"
+    
+    # 测试4: 验证点与多边形的对应关系
+    result_check = tg.add_buffer_groupbyid(test_data, distance=1000, geom=True)
+    
+    # 每个点应该在其对应的聚合多边形内
+    for idx, row in result_check.iterrows():
+        if pd.notna(row['聚合id']) and pd.notna(row.geometry):
+            point = Point(row['lon'], row['lat'])
+            assert row.geometry.contains(point) or row.geometry.touches(point), \
+                f"点 {row['name']} 应该在其聚合多边形内"
+    print("✓ test_add_buffer_groupbyid 所有测试通过!")
 
 if __name__ == "__main__":
     test_min_distance_onetable()
@@ -264,3 +396,5 @@ if __name__ == "__main__":
     test_webmercator_and_back()
     test_unknown_crs_raises()
     test_add_buffer()
+    test_add_points()
+    test_add_buffer_groupbyid()

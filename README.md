@@ -184,7 +184,7 @@ print(result)
 | C   | 116.404  | 39.916   | 12958034.01      | 4853743.126      |
 | D   | 116.408  | 39.919   | 12958479.28      | 4854178.552      |
 
-### 3、Generate buffers of the specified range based on the longitude and latitude columns in the table and add the geometry.
+### 4、Generate buffers of the specified range based on the longitude and latitude columns in the table and add the geometry.
 ```python
 import pandas as pd
 import tablegis as tg
@@ -222,6 +222,79 @@ print(res_buffer_size)
 |---|----------|---------|-------------|-------------------------------------------------|
 | 0 | 116.4074 | 39.9042 | 500         | POLYGON ((116.41325 39.90423, 116.41322 39.903... |
 | 1 | 121.4737 | 31.2304 | 1000        | POLYGON ((121.48417 31.23003, 121.48408 31.229... |
+
+### 5、Convert the latitude and longitude columns in the table into point-shaped geometries and then transform them into a gdf.
+```python
+import pandas as pd
+import tablegis as tg
+
+df = pd.DataFrame({
+        'lon': [116.4074, 121.4737, 113.2644],
+        'lat': [39.9042, 31.2304, 23.1291],
+        'city': ['Beijing', 'Shanghai', 'Guangzhou']
+    })
+# Generate points based on latitude and longitude
+result1 = tg.add_points(df)
+print(result1)
+```
+**Result Display:**
+
+| lon       | lat        | city      | geometry                     |
+|-----------|------------|-----------|------------------------------|
+| 116.4074  | 39.9042    | Beijing   | POINT (116.4074 39.9042)     |
+| 121.4737  | 31.2304    | Shanghai  | POINT (121.4737 31.2304)     |
+| 113.2644  | 23.1291    | Guangzhou | POINT (113.2644 23.1291)     |
+
+
+### 6、Concentrate the latitude and longitude data in the table using the method of expansion and recombination, and add the fused id as well as the range geom.
+```python
+import pandas as pd
+import tablegis as tg
+# Prepare test data
+test_data = pd.DataFrame({
+    'lon': [116.40, 116.41, 116.50, 116.51],
+    'lat': [39.90, 39.91, 39.95, 39.96],
+    'name': ['A', 'B', 'C', 'D'],
+    'value': [1, 2, 3, 4]
+})
+
+# Test 1: Return geometry
+result_no_geom = tg.add_buffer_groupbyid(
+    test_data, 
+    lon='lon', 
+    lat='lat',
+    distance=1000,
+    columns_name='group_id',
+    id_label_prefix='id_',
+    geom=True
+)
+# Test 2: Do not return geometry
+result_geom = tg.add_buffer_groupbyid(
+    test_data, 
+    lon='lon', 
+    lat='lat',
+    distance=1000,
+    columns_name='group_id',
+    id_label_prefix='id_',
+    geom=False
+)
+```
+**Result Display:**
+## no geom
+| lon   | lat   | name | value | group_id |
+|-------|-------|------|-------|----------|
+| 116.40| 39.90 | A    | 1     | id_0     |
+| 116.41| 39.91 | B    | 2     | id_0     |
+| 116.50| 39.95 | C    | 3     | id_1     |
+| 116.51| 39.96 | D    | 4     | id_1     |
+
+## geom
+| lon   | lat   | name | value | group_id | geometry |
+|-------|-------|------|-------|----------|---------|
+| 116.40| 39.90 | A    | 1     | id_0     | POLYGON ((116.41149 39.8983, 116.41122 39.8974...) |
+| 116.41| 39.91 | B    | 2     | id_0     | POLYGON ((116.41149 39.8983, 116.41122 39.8974...) |
+| 116.50| 39.95 | C    | 3     | id_1     | POLYGON ((116.51149 39.94829, 116.51122 39.947...) |
+| 116.51| 39.96 | D    | 4     | id_1     | POLYGON ((116.51149 39.94829, 116.51122 39.947...) |
 
 
 ## Contributing
