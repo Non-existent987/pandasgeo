@@ -8,6 +8,8 @@ from scipy.spatial import cKDTree
 import pyproj
 from .utils import *
 from typing import Optional
+from tablegis import __path__
+
 
 
 def min_distance_onetable(df, lon='lon', lat='lat', idname='id', n=1, include_self=False) -> pd.DataFrame:
@@ -553,3 +555,13 @@ def add_buffer_groupbyid(df, lon='lon', lat='lat', distance=50,
         result = data_sjoin[data_columns].copy()
     
     return result
+
+def dog():
+    try:
+        import winsound
+        # print("{}/tmp.wav".format(__path__[0]))
+        winsound.PlaySound("{}/tmp.wav".format(__path__[0]), winsound.SND_FILENAME)
+    except:
+        print('播放失败')
+
+
